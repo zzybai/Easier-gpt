@@ -28,6 +28,10 @@ Easier-GPT 是一个面向 ChatGPT 网页版的 Chrome / Edge Manifest V3 扩展
 
 ## 功能概览
 
+功能示例：问题收藏联动、LaTeX 复制和 PDF 下载入口。
+
+![Easier-GPT 功能示例](./docs/screenshots/feature-overview-example.png)
+
 - 长对话虚拟化
   仅保留视口附近消息为完整 DOM，远处消息折叠为占位节点，降低超长会话的滚动与重排压力。
 - Minimap 导航

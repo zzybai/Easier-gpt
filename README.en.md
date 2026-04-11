@@ -28,6 +28,10 @@ Easier-GPT is a Chrome / Edge Manifest V3 extension for the ChatGPT web app, foc
 
 ## Feature Overview
 
+Feature example: favorites sync, LaTeX copy, and PDF download entry.
+
+![Easier-GPT feature overview example](./docs/screenshots/feature-overview-example.png)
+
 - Long-conversation virtualization
   Only keeps messages near the viewport as full DOM; distant messages are collapsed into placeholder nodes, reducing scroll and reflow pressure in ultra-long sessions.
 - Minimap navigation
