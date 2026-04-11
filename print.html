@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Easier-GPT PDF Export</title>
+    <link rel="stylesheet" href="vendor/katex/katex.min.css">
+    <link rel="stylesheet" href="print.css">
+  </head>
+  <body>
+    <main class="easier-gpt-print-shell">
+      <header class="easier-gpt-print-header">
+        <h1 class="easier-gpt-print-page-title" data-easier-gpt-print-page-title>正在生成 PDF</h1>
+        <p class="easier-gpt-print-status" data-easier-gpt-print-status>正在准备打印预览…</p>
+      </header>
+
+      <section class="easier-gpt-print-meta" data-easier-gpt-print-meta hidden></section>
+      <section class="easier-gpt-print-messages" data-easier-gpt-print-messages></section>
+    </main>
+
+    <script src="vendor/katex/katex.min.js"></script>
+    <script src="pdf-export.js"></script>
+    <script src="print.js"></script>
+  </body>
+</html>

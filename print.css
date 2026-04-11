@@ -1,0 +1,240 @@
+:root {
+  color-scheme: light;
+  --easier-gpt-print-text: #151515;
+  --easier-gpt-print-muted: #666;
+  --easier-gpt-print-border: #d9d9d9;
+  --easier-gpt-print-surface: #fff;
+  --easier-gpt-print-accent: #0b5bd3;
+  --easier-gpt-print-assistant: #f5f7fb;
+  --easier-gpt-print-user: #f9f4ea;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #eef1f6;
+  color: var(--easier-gpt-print-text);
+  font-family: "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
+  line-height: 1.6;
+}
+
+body {
+  padding: 32px 20px 48px;
+}
+
+.easier-gpt-print-shell {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.easier-gpt-print-header {
+  margin-bottom: 20px;
+}
+
+.easier-gpt-print-page-title {
+  margin: 0 0 8px;
+  font-size: 28px;
+  line-height: 1.2;
+}
+
+.easier-gpt-print-status {
+  margin: 0;
+  color: var(--easier-gpt-print-muted);
+  font-size: 14px;
+}
+
+.easier-gpt-print-meta {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 24px;
+  padding: 16px 18px;
+  border: 1px solid var(--easier-gpt-print-border);
+  border-radius: 16px;
+  background: var(--easier-gpt-print-surface);
+}
+
+.easier-gpt-print-meta-item {
+  font-size: 13px;
+  color: var(--easier-gpt-print-muted);
+  word-break: break-word;
+}
+
+.easier-gpt-print-message {
+  margin-bottom: 18px;
+  padding: 18px 20px;
+  border: 1px solid var(--easier-gpt-print-border);
+  border-radius: 18px;
+  background: var(--easier-gpt-print-surface);
+  break-inside: avoid;
+}
+
+.easier-gpt-print-message[data-role="assistant"] {
+  background: var(--easier-gpt-print-assistant);
+}
+
+.easier-gpt-print-message[data-role="user"] {
+  background: var(--easier-gpt-print-user);
+}
+
+.easier-gpt-print-message-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.easier-gpt-print-role {
+  color: var(--easier-gpt-print-accent);
+  font-weight: 700;
+}
+
+.easier-gpt-print-model {
+  color: var(--easier-gpt-print-muted);
+}
+
+.easier-gpt-print-body {
+  font-size: 15px;
+}
+
+.easier-gpt-print-rich-region + .easier-gpt-print-rich-region {
+  margin-top: 12px;
+}
+
+.easier-gpt-print-body p,
+.easier-gpt-print-paragraph {
+  margin: 0 0 12px;
+}
+
+.easier-gpt-print-body ul,
+.easier-gpt-print-body ol,
+.easier-gpt-print-body blockquote {
+  margin: 0 0 12px;
+}
+
+.easier-gpt-print-body li + li {
+  margin-top: 4px;
+}
+
+.easier-gpt-print-body pre,
+.easier-gpt-print-paragraph:last-child {
+  margin-bottom: 0;
+}
+
+.easier-gpt-print-body pre {
+  margin: 12px 0;
+}
+
+.easier-gpt-print-body blockquote {
+  padding-left: 12px;
+  border-left: 3px solid rgba(11, 91, 211, 0.18);
+  color: #374151;
+}
+
+.easier-gpt-print-body .katex-display,
+.easier-gpt-print-body .math-block,
+.easier-gpt-print-math-block {
+  margin: 14px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+.easier-gpt-print-body .katex-display > .katex {
+  display: block;
+  text-align: center;
+  white-space: normal;
+}
+
+.easier-gpt-print-body .katex {
+  text-indent: 0;
+}
+
+.easier-gpt-print-body .katex .base {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.easier-gpt-print-body .math-inline,
+.easier-gpt-print-body .katex {
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+.easier-gpt-print-paragraph:last-child {
+  margin-bottom: 0;
+}
+
+.easier-gpt-print-code {
+  margin: 12px 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  border-radius: 12px;
+  background: #111827;
+  color: #f3f4f6;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.easier-gpt-print-inline-code {
+  padding: 0.12em 0.35em;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.08);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.92em;
+}
+
+.easier-gpt-print-math-block {
+  margin: 14px 0;
+  text-align: center;
+  overflow-x: auto;
+}
+
+.easier-gpt-print-math.is-error {
+  padding: 0.1em 0.25em;
+  border-radius: 6px;
+  background: rgba(187, 37, 37, 0.08);
+  color: #a11;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.easier-gpt-print-empty {
+  color: var(--easier-gpt-print-muted);
+  font-style: italic;
+}
+
+@page {
+  size: auto;
+  margin: 14mm 12mm;
+}
+
+@media print {
+  html,
+  body {
+    background: #fff;
+  }
+
+  body {
+    padding: 0;
+  }
+
+  .easier-gpt-print-shell {
+    max-width: none;
+  }
+
+  .easier-gpt-print-status {
+    display: none;
+  }
+}

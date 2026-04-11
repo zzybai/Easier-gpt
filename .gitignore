@@ -1,0 +1,6 @@
+.claude/
+.codex
+.superpowers/
+.DS_Store
+Thumbs.db
+*.zip

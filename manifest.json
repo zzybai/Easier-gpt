@@ -1,0 +1,53 @@
+{
+  "manifest_version": 3,
+  "name": "Easier-GPT",
+  "version": "1.0.0",
+  "description": "Easier-GPT — Track long chats, export structured PDF, and copy LaTeX with one click.",
+  "permissions": [
+    "storage"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": [
+        "vendor/katex/katex.min.js",
+        "export-cleanup.js",
+        "question-dock.js",
+        "question-favorites.js",
+        "turn-preview.js",
+        "floating-pdf-layout.js",
+        "formula-copy.js",
+        "print-structure.js",
+        "content.js"
+      ],
+      "css": [
+        "styles.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "print.html"
+      ],
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ]
+    },
+    {
+      "resources": [
+        "vendor/katex/katex.min.css",
+        "vendor/katex/fonts/*"
+      ],
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ]
+    }
+  ]
+}
