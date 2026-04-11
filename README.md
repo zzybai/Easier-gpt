@@ -1,3 +1,5 @@
+[中文](./README.md) | [English](./README.en.md)
+
 # Easier-GPT
 
 > 让长对话可追踪，让知识可导出，让公式可复用。
