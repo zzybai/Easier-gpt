@@ -51,13 +51,6 @@ Easier-GPT 是一个面向 ChatGPT 网页版的 Chrome / Edge Manifest V3 扩展
 - 性能统计
   可选展示 turns 数、展开/折叠数量和同步耗时，便于观察虚拟化策略是否工作正常。
 
-## 设计取向
-
-- 只依赖稳定语义属性，例如 `data-message-author-role`
-- 通过 `MutationObserver`、`requestAnimationFrame` 和占位节点维护滚动稳定性
-- 高风险高频路径尽量做节流、缓存和分阶段同步
-- 数学渲染与字体资源本地化，避免 CDN 失效或额外网络依赖
-
 ## 安装
 
 ### 方式一：从源码直接加载
@@ -100,77 +93,12 @@ Easier-GPT 是一个面向 ChatGPT 网页版的 Chrome / Edge Manifest V3 扩展
 > [!IMPORTANT]
 > Easier-GPT 会读取当前 ChatGPT 页面中的对话 DOM，以完成折叠、搜索、导出和公式增强。这是扩展工作的前提，不适合安装在你不信任的第三方修改版仓库上。
 
-## 本地开发
+## 许可与商用提醒
 
-本仓库没有 `npm`、打包器或前端框架，开发方式以直接加载扩展为主。
-
-当前工作流中的打包命令是：
-
-```bash
-zip -r easier-gpt-local.zip \
-  manifest.json \
-  content.js \
-  styles.css \
-  export-cleanup.js \
-  question-dock.js \
-  question-favorites.js \
-  turn-preview.js \
-  floating-pdf-layout.js \
-  formula-copy.js \
-  print-structure.js \
-  print.html \
-  print.js \
-  print.css \
-  pdf-export.js \
-  vendor
-```
-
-不过，当前 `manifest.json` 还引用了多个根目录辅助脚本，因此本地调试和功能验证更推荐直接“加载已解压的扩展程序”指向仓库根目录。若你要手动整理一个完整运行包，至少应包含：
-
-```text
-manifest.json
-content.js
-styles.css
-vendor/
-export-cleanup.js
-question-dock.js
-question-favorites.js
-turn-preview.js
-floating-pdf-layout.js
-formula-copy.js
-print-structure.js
-print.html
-print.js
-print.css
-pdf-export.js
-```
-
-## 测试与验证
-
-当前仓库同时包含轻量 Node 单元测试和浏览器手工验证两部分。
-
-运行单元测试：
-
-```bash
-node --test tests/*.test.js
-```
-
-GitHub 上的 `Test` 工作流也会在 `push` 和 `pull_request` 时自动执行这组测试。
-
-建议至少手工验证以下场景：
-
-1. 在 `https://chatgpt.com/*` 和 `https://chat.openai.com/*` 下打开长对话
-2. 检查远处消息是否折叠，滚动回附近后是否能恢复
-3. 检查 minimap 跳转、hover 预览、搜索与导出面板
-4. 检查问题停靠栏、问题收藏与移动端窄宽度下的折叠表现
-5. 检查行内公式补渲染、LaTeX 复制与 PDF 导出
-6. 检查输入框展开与发送后恢复
-
-## GitHub 发布建议
-
-- 日常调试优先直接加载仓库根目录
-- 若使用 GitHub Actions 产物，请使用 `Package Extension` 工作流生成的 zip 包
-- 若计划继续发布到 Chrome / Edge 商店，建议后续补充正式图标、商店文案和版本发布说明
+- 本项目采用 MIT License，允许个人与商业使用、修改与再分发。
+- 使用、分发或二次开发时，请保留原始版权与许可声明，并自行评估合规责任。
+- 本项目与 OpenAI 无官方关联；涉及 ChatGPT、OpenAI 等名称或服务时，请遵守其最新服务条款、品牌与平台政策。
+- 若将本项目用于生产或商业环境，建议先完成安全评估、隐私评估与法务审查。
 
 ## 项目结构
 
