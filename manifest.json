@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Easier-GPT",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Easier-GPT — Track long chats, export structured PDF, and copy LaTeX with one click.",
   "permissions": [
     "storage"
@@ -15,6 +15,7 @@
       "js": [
         "vendor/katex/katex.min.js",
         "export-cleanup.js",
+        "conversation-context.js",
         "question-dock.js",
         "question-favorites.js",
         "turn-preview.js",

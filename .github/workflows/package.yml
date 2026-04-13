@@ -18,6 +18,7 @@ jobs:
           zip -r "$ZIP_NAME" \
             manifest.json \
             content.js \
+            conversation-context.js \
             styles.css \
             export-cleanup.js \
             question-dock.js \

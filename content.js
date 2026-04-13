@@ -132,6 +132,55 @@
     collapsePlan: null
   };
 
+  function getConversationContext(pathname = location.pathname) {
+    const api = globalThis.EasierGPTConversationContext;
+    if (api && typeof api.resolveConversationContext === "function") {
+      return api.resolveConversationContext(pathname);
+    }
+
+    const path = String(pathname || "").trim() || "/";
+    const classicMatch = path.match(/^\/c\/([^/]+)$/);
+    if (classicMatch) {
+      return {
+        isConversation: true,
+        conversationPath: path,
+        conversationId: classicMatch[1],
+        projectPath: "",
+        isProjectConversation: false
+      };
+    }
+
+    const projectConversationMatch = path.match(/^\/g\/([^/]+)\/c\/([^/]+)$/);
+    if (projectConversationMatch) {
+      return {
+        isConversation: true,
+        conversationPath: path,
+        conversationId: projectConversationMatch[2],
+        projectPath: `/g/${projectConversationMatch[1]}`,
+        isProjectConversation: true
+      };
+    }
+
+    const projectPathMatch = path.match(/^\/g\/([^/]+)$/);
+    if (projectPathMatch) {
+      return {
+        isConversation: false,
+        conversationPath: "",
+        conversationId: "",
+        projectPath: `/g/${projectPathMatch[1]}`,
+        isProjectConversation: false
+      };
+    }
+
+    return {
+      isConversation: false,
+      conversationPath: "",
+      conversationId: "",
+      projectPath: "",
+      isProjectConversation: false
+    };
+  }
+
   function init() {
     cleanupLegacyUi();
     bindGlobalListeners();
@@ -1137,7 +1186,7 @@
   }
 
   function isConversationPage() {
-    return /^\/c\//.test(location.pathname);
+    return getConversationContext().isConversation;
   }
 
   function scheduleBootstrapSync() {
@@ -1874,8 +1923,12 @@
   }
 
   function getConversationFavoriteStorageKey() {
-    const conversationKey = `${location.pathname}${location.search || ""}`;
-    return `${CONFIG.questionFavoritesStoragePrefix}${conversationKey}`;
+    const context = getConversationContext();
+    if (!context.isConversation || !context.conversationPath) {
+      return "";
+    }
+
+    return `${CONFIG.questionFavoritesStoragePrefix}${context.conversationPath}`;
   }
 
   function ensureFavoriteQuestionsLoaded() {
@@ -1963,7 +2016,11 @@
       return "";
     }
 
-    return favoriteApi.buildQuestionFavoriteKey(location.pathname, item.turnIndex, normalizedText);
+    return favoriteApi.buildQuestionFavoriteKey(
+      getConversationContext().conversationPath,
+      item.turnIndex,
+      normalizedText
+    );
   }
 
   function getFavoriteToggleIcon(isFavorited) {

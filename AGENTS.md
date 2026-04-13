@@ -9,7 +9,7 @@
 ## 构建、测试与本地开发
 本仓库没有 `npm` 或其他构建系统，开发方式以浏览器直接加载扩展为主。
 
-- `zip -r easier-gpt-local.zip manifest.json content.js styles.css vendor`
+- `zip -r easier-gpt-local.zip manifest.json content.js conversation-context.js styles.css vendor`
   本地打包，产物结构应与 CI 一致。
 - 打开 `chrome://extensions` 或 `edge://extensions`，开启开发者模式后选择 `Load unpacked`
   直接加载仓库根目录进行调试。
