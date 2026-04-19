@@ -1,6 +1,8 @@
 (() => {
   "use strict";
 
+  const stabilityApi = globalThis.EasierGPTStability || {};
+
   const CONFIG = {
     messageSelector: "[data-message-author-role]",
     placeholderSelector: "[data-easier-gpt-placeholder='1']",
@@ -43,7 +45,7 @@
     maxSnippetLength: 120,
     minPlaceholderHeight: 24,
     sidebarOffsetGapPx: 18,
-    sidebarFollowDurationMs: 360,
+    sidebarFollowFrames: 6,
     sidebarResolveMinIntervalMs: 280,
     pdfExportStoragePrefix: "easier-gpt-pdf-export:",
     questionFavoritesStoragePrefix: "easier-gpt-question-favorites:",
@@ -58,6 +60,7 @@
     nextMessageId: 1,
     rafSyncScheduled: false,
     observerMuted: false,
+    observerMuteDepth: 0,
     modelDirty: true,
     nextModelBuildAt: 0,
     modelBuildTimer: 0,
@@ -119,7 +122,7 @@
     sidebarAnchorEl: null,
     lastSidebarResolveAt: 0,
     layoutFollowRaf: 0,
-    layoutFollowUntil: 0,
+    layoutFollowFramesRemaining: 0,
     searchQuery: "",
     searchMatches: [],
     searchIndex: -1,
@@ -131,6 +134,35 @@
     collapseWorkerRunning: false,
     collapsePlan: null
   };
+
+  const isRelevantStructuralMutationRecord =
+    typeof stabilityApi.isRelevantStructuralMutation === "function"
+      ? stabilityApi.isRelevantStructuralMutation
+      : (record) => !!record && record.type === "childList";
+  const resolvePlaceholderHeightValue =
+    typeof stabilityApi.resolvePlaceholderHeight === "function"
+      ? stabilityApi.resolvePlaceholderHeight
+      : ({ cachedHeight = 0, measuredHeight = 0, minHeight = 24, lowCostMode = false }) => {
+          if (cachedHeight > 0) {
+            return cachedHeight;
+          }
+          if (measuredHeight > 0) {
+            return Math.max(measuredHeight, minHeight);
+          }
+          return lowCostMode ? 0 : minHeight;
+        };
+  const shouldApplySidebarOffsetValue =
+    typeof stabilityApi.shouldApplySidebarOffset === "function"
+      ? stabilityApi.shouldApplySidebarOffset
+      : (previousOffsetPx, nextOffsetPx, thresholdPx = 2) => {
+          if (!Number.isFinite(nextOffsetPx)) {
+            return false;
+          }
+          if (!Number.isFinite(previousOffsetPx) || previousOffsetPx < 0) {
+            return true;
+          }
+          return Math.abs(nextOffsetPx - previousOffsetPx) >= thresholdPx;
+        };
 
   function getConversationContext(pathname = location.pathname) {
     const api = globalThis.EasierGPTConversationContext;
@@ -216,7 +248,9 @@
       cancelAnimationFrame(STATE.layoutFollowRaf);
       STATE.layoutFollowRaf = 0;
     }
-    STATE.layoutFollowUntil = 0;
+    STATE.layoutFollowFramesRemaining = 0;
+    STATE.observerMuted = false;
+    STATE.observerMuteDepth = 0;
     STATE.lastSidebarOffsetPx = -1;
     STATE.sidebarAnchorEl = null;
     STATE.lastSidebarResolveAt = 0;
@@ -547,28 +581,7 @@
   }
 
   function isThreadMutationRecord(record) {
-    if (record.addedNodes.length === 0 && record.removedNodes.length === 0) {
-      return false;
-    }
-
-    const target = record.target;
-    if (target instanceof Element && target.closest("[data-easier-gpt-item='1'], article[data-testid^='conversation-turn']")) {
-      return true;
-    }
-
-    for (const node of record.addedNodes) {
-      if (node instanceof Element && node.matches("article[data-testid^='conversation-turn']")) {
-        return true;
-      }
-    }
-
-    for (const node of record.removedNodes) {
-      if (node instanceof Element && node.matches("article[data-testid^='conversation-turn']")) {
-        return true;
-      }
-    }
-
-    return false;
+    return isRelevantStructuralMutationRecord(record);
   }
 
   function observeUrlChanges() {
@@ -1081,23 +1094,28 @@
   function collapseMessage(id, lowCostMode = false) {
     const item = STATE.messageById.get(id);
     if (!item || item.isPlaceholder) {
-      return;
+      return false;
     }
 
     const node = item.el;
     if (!node.isConnected || !node.parentNode) {
       STATE.modelDirty = true;
-      return;
+      return false;
     }
 
-    let height = STATE.heightById.get(id) || 0;
+    const cachedHeight = STATE.heightById.get(id) || 0;
+    const measuredHeight = lowCostMode ? 0 : Math.max(node.offsetHeight, CONFIG.minPlaceholderHeight);
+    const height = resolvePlaceholderHeightValue({
+      cachedHeight,
+      measuredHeight,
+      minHeight: CONFIG.minPlaceholderHeight,
+      lowCostMode
+    });
     if (height <= 0) {
-      if (lowCostMode) {
-        // Avoid layout reads while typing: estimate and remove heavy DOM first.
-        height = item.role === CONFIG.userRole ? 84 : 180;
-      } else {
-        height = Math.max(node.offsetHeight, CONFIG.minPlaceholderHeight);
-      }
+      return false;
+    }
+
+    if (height !== cachedHeight) {
       STATE.heightById.set(id, height);
     }
 
@@ -1123,6 +1141,7 @@
 
     item.el = placeholder;
     item.isPlaceholder = true;
+    return true;
   }
 
   function restoreMessage(id) {
@@ -1137,9 +1156,12 @@
       record.placeholder.replaceWith(record.node);
     }
 
-    if (!STATE.heightById.has(id) && record.node.isConnected) {
+    if (record.node.isConnected) {
       const measured = Math.max(record.node.offsetHeight, CONFIG.minPlaceholderHeight);
-      STATE.heightById.set(id, measured);
+      const cached = STATE.heightById.get(id) || 0;
+      if (!cached || Math.abs(cached - measured) >= 2) {
+        STATE.heightById.set(id, measured);
+      }
     }
 
     record.node.removeAttribute("data-easier-gpt-collapsed");
@@ -3191,14 +3213,14 @@
     requestLayoutFollow();
   }
 
-  function requestLayoutFollow(durationMs = CONFIG.sidebarFollowDurationMs) {
+  function requestLayoutFollow(frameCount = CONFIG.sidebarFollowFrames) {
     if (!isConversationPage()) {
       return;
     }
 
-    STATE.layoutFollowUntil = Math.max(
-      STATE.layoutFollowUntil,
-      performance.now() + durationMs
+    STATE.layoutFollowFramesRemaining = Math.max(
+      STATE.layoutFollowFramesRemaining,
+      Math.max(1, Number(frameCount) || 1)
     );
 
     if (STATE.layoutFollowRaf !== 0) {
@@ -3208,10 +3230,9 @@
     const tick = () => {
       STATE.layoutFollowRaf = 0;
       updateSidebarOffset(false);
-      if (performance.now() < STATE.layoutFollowUntil) {
+      STATE.layoutFollowFramesRemaining = Math.max(STATE.layoutFollowFramesRemaining - 1, 0);
+      if (STATE.layoutFollowFramesRemaining > 0) {
         STATE.layoutFollowRaf = requestAnimationFrame(tick);
-      } else {
-        STATE.layoutFollowUntil = 0;
       }
     };
 
@@ -3220,7 +3241,7 @@
 
   function updateSidebarOffset(force = false) {
     const nextOffsetPx = measureSidebarOffsetPx(force);
-    if (!force && nextOffsetPx === STATE.lastSidebarOffsetPx) {
+    if (!force && !shouldApplySidebarOffsetValue(STATE.lastSidebarOffsetPx, nextOffsetPx, 2)) {
       if (isMinimapPanelOpen()) {
         positionMinimapPanel();
       }
@@ -4092,7 +4113,23 @@
   }
 
   function muteObserver(value) {
-    STATE.observerMuted = value;
+    if (value) {
+      STATE.observerMuteDepth += 1;
+      STATE.observerMuted = true;
+      return;
+    }
+
+    STATE.observerMuteDepth = Math.max(0, STATE.observerMuteDepth - 1);
+    STATE.observerMuted = STATE.observerMuteDepth > 0;
+  }
+
+  function runWithMutedObserver(callback) {
+    muteObserver(true);
+    try {
+      return callback();
+    } finally {
+      muteObserver(false);
+    }
   }
 
   function normalizeRole(value) {
@@ -4722,16 +4759,6 @@
       characterData: true
     });
 
-    if (STATE.inlineLatexSafetyTimer === 0) {
-      STATE.inlineLatexSafetyTimer = window.setInterval(() => {
-        if (document.visibilityState !== "visible") {
-          return;
-        }
-        ensureKatexRuntime();
-        queueInlineLatexForViewportTurns(2, CONFIG.inlineLatexLiveAssistantScanLimit);
-      }, 900);
-    }
-
     startInlineLatexBootstrapTimer();
   }
 
@@ -4907,26 +4934,29 @@
     let node;
     while ((node = walker.nextNode())) textNodes.push(node);
 
-    let changed = false;
-    for (const textNode of textNodes) {
-      if (textNode.parentElement?.closest(".katex, code, pre, [data-easier-gpt-inline-math='1']")) continue;
-      const text = textNode.textContent || "";
-      if (!text.includes("$")) continue;
+    const changed = runWithMutedObserver(() => {
+      let localChanged = false;
+      for (const textNode of textNodes) {
+        if (textNode.parentElement?.closest(".katex, code, pre, [data-easier-gpt-inline-math='1']")) continue;
+        const text = textNode.textContent || "";
+        if (!text.includes("$")) continue;
 
-      const parts = splitInlineMathSegments(text);
-      if (!parts.some(part => part.type === "math")) continue;
+        const parts = splitInlineMathSegments(text);
+        if (!parts.some(part => part.type === "math")) continue;
 
-      const frag = document.createDocumentFragment();
-      for (const part of parts) {
-        if (part.type === "math") {
-          frag.appendChild(buildInlineMathNode(part.value));
-        } else {
-          frag.appendChild(document.createTextNode(part.value));
+        const frag = document.createDocumentFragment();
+        for (const part of parts) {
+          if (part.type === "math") {
+            frag.appendChild(buildInlineMathNode(part.value));
+          } else {
+            frag.appendChild(document.createTextNode(part.value));
+          }
         }
+        textNode.replaceWith(frag);
+        localChanged = true;
       }
-      textNode.replaceWith(frag);
-      changed = true;
-    }
+      return localChanged;
+    });
 
     if (changed) {
       STATE.inlineLatexSourceByHost.set(el, el.textContent || "");
