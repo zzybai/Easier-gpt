@@ -21,7 +21,7 @@
   align-items: center;
   gap: 6px;
   padding: 2px 0;
-  transition: left 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: none;
 }
 
 .easier-gpt-minimap-track {
@@ -183,7 +183,7 @@
   z-index: 2147483646;
   pointer-events: none;
   white-space: nowrap;
-  transition: left 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: none;
 }
 
 .easier-gpt-minimap-dot {
@@ -340,12 +340,11 @@
   background: transparent;
   color: rgba(245, 208, 108, 0.92);
   cursor: pointer;
-  transition: color 0.12s ease, background 0.12s ease, opacity 0.12s ease, transform 0.12s ease;
+  transition: color 0.12s ease, background 0.12s ease, opacity 0.12s ease;
 }
 
 .easier-gpt-question-favorite-toggle:hover {
   color: rgba(255, 226, 138, 0.98);
-  transform: translateY(-1px);
 }
 
 .easier-gpt-question-favorite-toggle:disabled {
@@ -439,12 +438,11 @@
   background: rgba(255, 255, 255, 0.08);
   color: #f4f4f4;
   cursor: pointer;
-  transition: background 0.12s ease, transform 0.12s ease;
+  transition: background 0.12s ease;
 }
 
 .easier-gpt-question-dock-toggle:hover {
   background: rgba(255, 255, 255, 0.16);
-  transform: translateY(-1px);
 }
 
 .easier-gpt-question-dock-toggle svg {
@@ -474,12 +472,11 @@
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.05);
   cursor: pointer;
-  transition: background 0.12s ease, transform 0.12s ease;
+  transition: background 0.12s ease;
 }
 
 .easier-gpt-question-dock-item:hover {
   background: rgba(255, 255, 255, 0.11);
-  transform: translateY(-1px);
 }
 
 .easier-gpt-question-dock-item.is-active {

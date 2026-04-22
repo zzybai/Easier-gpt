@@ -1,11 +1,15 @@
 (() => {
   "use strict";
 
+  const stabilityApi = globalThis.EasierGPTStability || {};
+
   const CONFIG = {
     messageSelector: "[data-message-author-role]",
     placeholderSelector: "[data-easier-gpt-placeholder='1']",
     userRole: "user",
     assistantRole: "assistant",
+    virtualizationEnabled: false,
+    inlineLatexAutoRenderEnabled: false,
     turnsAroundViewport: 3,
     maxTurnsAroundViewportFastScroll: 12,
     jumpPreloadTurns: 24,
@@ -20,6 +24,9 @@
     budgetCollapseOpsPerSync: 40,
     budgetCollapseOpsPerSyncTyping: 10,
     collapsePauseAfterScrollMs: 160,
+    collapseIdleAfterScrollMs: 520,
+    collapseIdleAfterInputMs: 900,
+    collapseViewportGuardTurns: 6,
     modelRebuildMinIntervalMs: 220,
     pinToBottomThresholdPx: 260,
     startupCollapseDelayMs: 1100,
@@ -43,7 +50,7 @@
     maxSnippetLength: 120,
     minPlaceholderHeight: 24,
     sidebarOffsetGapPx: 18,
-    sidebarFollowDurationMs: 360,
+    sidebarFollowFrames: 6,
     sidebarResolveMinIntervalMs: 280,
     pdfExportStoragePrefix: "easier-gpt-pdf-export:",
     questionFavoritesStoragePrefix: "easier-gpt-question-favorites:",
@@ -58,6 +65,7 @@
     nextMessageId: 1,
     rafSyncScheduled: false,
     observerMuted: false,
+    observerMuteDepth: 0,
     modelDirty: true,
     nextModelBuildAt: 0,
     modelBuildTimer: 0,
@@ -109,6 +117,8 @@
     minimapPinnedPreviewTurn: -1,
     minimapPinnedPreviewUntil: 0,
     questionDockEl: null,
+    lastQuestionDockSignature: "",
+    questionDockPendingRevealTurn: -1,
     questionDockCollapsed: false,
     favoriteQuestionKeys: new Set(),
     favoriteConversationKey: "",
@@ -119,7 +129,7 @@
     sidebarAnchorEl: null,
     lastSidebarResolveAt: 0,
     layoutFollowRaf: 0,
-    layoutFollowUntil: 0,
+    layoutFollowFramesRemaining: 0,
     searchQuery: "",
     searchMatches: [],
     searchIndex: -1,
@@ -131,6 +141,81 @@
     collapseWorkerRunning: false,
     collapsePlan: null
   };
+
+  const isRelevantStructuralMutationRecord =
+    typeof stabilityApi.isRelevantStructuralMutation === "function"
+      ? stabilityApi.isRelevantStructuralMutation
+      : (record) => !!record && record.type === "childList";
+  const resolvePlaceholderHeightValue =
+    typeof stabilityApi.resolvePlaceholderHeight === "function"
+      ? stabilityApi.resolvePlaceholderHeight
+      : ({ cachedHeight = 0, measuredHeight = 0, minHeight = 24, lowCostMode = false }) => {
+          if (cachedHeight > 0) {
+            return cachedHeight;
+          }
+          if (measuredHeight > 0) {
+            return Math.max(measuredHeight, minHeight);
+          }
+          return lowCostMode ? 0 : minHeight;
+        };
+  const shouldApplySidebarOffsetValue =
+    typeof stabilityApi.shouldApplySidebarOffset === "function"
+      ? stabilityApi.shouldApplySidebarOffset
+      : (previousOffsetPx, nextOffsetPx, thresholdPx = 2) => {
+          if (!Number.isFinite(nextOffsetPx)) {
+            return false;
+          }
+          if (!Number.isFinite(previousOffsetPx) || previousOffsetPx < 0) {
+            return true;
+          }
+          return Math.abs(nextOffsetPx - previousOffsetPx) >= thresholdPx;
+        };
+  const shouldRefreshMeasuredHeightValue =
+    typeof stabilityApi.shouldRefreshMeasuredHeight === "function"
+      ? stabilityApi.shouldRefreshMeasuredHeight
+      : (cachedHeight, measuredHeight, minDeltaPx = 8, relativeThreshold = 0.05) => {
+          if (!measuredHeight) {
+            return false;
+          }
+          if (!cachedHeight) {
+            return true;
+          }
+          const delta = Math.abs(measuredHeight - cachedHeight);
+          return delta >= minDeltaPx && delta / cachedHeight >= relativeThreshold;
+        };
+  const expandTurnRangeValue =
+    typeof stabilityApi.expandTurnRange === "function"
+      ? stabilityApi.expandTurnRange
+      : (minTurn, maxTurn, totalTurns, paddingTurns = 0) => ({
+          min: Math.max(0, Math.round(minTurn) - Math.max(0, Math.round(paddingTurns))),
+          max: Math.min(
+            Math.max(0, Math.round(totalTurns) - 1),
+            Math.round(maxTurn) + Math.max(0, Math.round(paddingTurns))
+          )
+        });
+  const isCollapseIdleValue =
+    typeof stabilityApi.isCollapseIdle === "function"
+      ? stabilityApi.isCollapseIdle
+      : ({ nowTs, lastScrollAt, lastInputAt, typingHot, pauseAfterScrollMs, pauseAfterInputMs }) => {
+          if (typingHot) {
+            return false;
+          }
+          if (nowTs - lastScrollAt < pauseAfterScrollMs) {
+            return false;
+          }
+          if (nowTs - lastInputAt < pauseAfterInputMs) {
+            return false;
+          }
+          return true;
+        };
+  const isVirtualizationActiveValue =
+    typeof stabilityApi.isVirtualizationActive === "function"
+      ? stabilityApi.isVirtualizationActive
+      : ({ virtualizationEnabled, mode }) => !!virtualizationEnabled && mode === "dynamic";
+  const isInlineLatexAutoRenderActiveValue =
+    typeof stabilityApi.isInlineLatexAutoRenderActive === "function"
+      ? stabilityApi.isInlineLatexAutoRenderActive
+      : ({ inlineLatexAutoRenderEnabled }) => !!inlineLatexAutoRenderEnabled;
 
   function getConversationContext(pathname = location.pathname) {
     const api = globalThis.EasierGPTConversationContext;
@@ -216,7 +301,9 @@
       cancelAnimationFrame(STATE.layoutFollowRaf);
       STATE.layoutFollowRaf = 0;
     }
-    STATE.layoutFollowUntil = 0;
+    STATE.layoutFollowFramesRemaining = 0;
+    STATE.observerMuted = false;
+    STATE.observerMuteDepth = 0;
     STATE.lastSidebarOffsetPx = -1;
     STATE.sidebarAnchorEl = null;
     STATE.lastSidebarResolveAt = 0;
@@ -227,6 +314,8 @@
     STATE.minimapPinnedPreviewTurn = -1;
     STATE.minimapPinnedPreviewUntil = 0;
     STATE.questionDockEl = null;
+    STATE.lastQuestionDockSignature = "";
+    STATE.questionDockPendingRevealTurn = -1;
     if (STATE.minimapPreviewHideTimer !== 0) {
       clearTimeout(STATE.minimapPreviewHideTimer);
       STATE.minimapPreviewHideTimer = 0;
@@ -547,28 +636,7 @@
   }
 
   function isThreadMutationRecord(record) {
-    if (record.addedNodes.length === 0 && record.removedNodes.length === 0) {
-      return false;
-    }
-
-    const target = record.target;
-    if (target instanceof Element && target.closest("[data-easier-gpt-item='1'], article[data-testid^='conversation-turn']")) {
-      return true;
-    }
-
-    for (const node of record.addedNodes) {
-      if (node instanceof Element && node.matches("article[data-testid^='conversation-turn']")) {
-        return true;
-      }
-    }
-
-    for (const node of record.removedNodes) {
-      if (node instanceof Element && node.matches("article[data-testid^='conversation-turn']")) {
-        return true;
-      }
-    }
-
-    return false;
+    return isRelevantStructuralMutationRecord(record);
   }
 
   function observeUrlChanges() {
@@ -686,6 +754,17 @@
       }
       cancelBootstrapSync();
 
+      if (!isVirtualizationEnabled()) {
+        restoreAllCollapsedMessages();
+        STATE.collapseTargetRange = null;
+        STATE.collapsePlan = null;
+        refreshAuxUi();
+        if (isInlineLatexAutoRenderEnabled()) {
+          queueInlineLatexForViewportTurns(2);
+        }
+        return;
+      }
+
       if (STATE.mode === "expanded") {
         restoreAllCollapsedMessages();
         if (STATE.modelDirty) {
@@ -694,7 +773,9 @@
 
         STATE.collapseTargetRange = null;
         refreshAuxUi();
-        queueInlineLatexForViewportTurns(2);
+        if (isInlineLatexAutoRenderEnabled()) {
+          queueInlineLatexForViewportTurns(2);
+        }
         return;
       }
 
@@ -705,10 +786,12 @@
         STATE.currentAnchorTurn = anchorTurn;
         const minTurn = clamp(anchorTurn - 1, 0, STATE.totalTurns - 1);
         const maxTurn = clamp(anchorTurn + 1, 0, STATE.totalTurns - 1);
-        enforceLiveTurnBudget(anchorTurn, true);
+        enforceLiveTurnBudget(anchorTurn, true, minTurn, maxTurn);
         requestBackgroundCollapse(minTurn, maxTurn);
         refreshAuxUi();
-        queueInlineLatexForViewportTurns(2);
+        if (isInlineLatexAutoRenderEnabled()) {
+          queueInlineLatexForViewportTurns(2);
+        }
         scheduleSyncAfterTyping(false);
         return;
       }
@@ -729,13 +812,15 @@
       restoreTurnsImmediately(minTurn, maxTurn);
 
       // Hard cap: never keep too many full turns in DOM.
-      enforceLiveTurnBudget(anchorTurn, false);
+      enforceLiveTurnBudget(anchorTurn, false, minTurn, maxTurn);
 
       // Background path: collapse far turns lazily.
       requestBackgroundCollapse(minTurn, maxTurn);
 
       refreshAuxUi();
-      queueInlineLatexForViewportTurns();
+      if (isInlineLatexAutoRenderEnabled()) {
+        queueInlineLatexForViewportTurns();
+      }
     } finally {
       finalizeSync(syncStart);
     }
@@ -840,7 +925,10 @@
     }
 
     cleanupCollapsedRecords();
-    if (STATE.inlineLatexBootstrapRuns < CONFIG.inlineLatexBootstrapScanMaxRuns) {
+    if (
+      isInlineLatexAutoRenderEnabled() &&
+      STATE.inlineLatexBootstrapRuns < CONFIG.inlineLatexBootstrapScanMaxRuns
+    ) {
       queueInlineLatexForViewportTurns(4, CONFIG.inlineLatexLiveAssistantScanLimit);
     }
 
@@ -901,10 +989,22 @@
   }
 
   function requestBackgroundCollapse(minTurn, maxTurn) {
+    if (!isVirtualizationEnabled()) {
+      STATE.collapseTargetRange = null;
+      STATE.collapsePlan = null;
+      return;
+    }
+
+    const protectedRange = expandTurnRangeValue(
+      minTurn,
+      maxTurn,
+      STATE.totalTurns,
+      CONFIG.collapseViewportGuardTurns
+    );
     const target = {
-      min: minTurn,
-      max: maxTurn,
-      key: `${minTurn}:${maxTurn}`
+      min: protectedRange.min,
+      max: protectedRange.max,
+      key: `${protectedRange.min}:${protectedRange.max}`
     };
 
     if (STATE.collapseTargetRange && STATE.collapseTargetRange.key === target.key) {
@@ -921,6 +1021,12 @@
   }
 
   function collapseWorkerTick() {
+    if (!isVirtualizationEnabled()) {
+      STATE.collapsePlan = null;
+      STATE.collapseWorkerRunning = false;
+      return;
+    }
+
     if (STATE.mode !== "dynamic") {
       STATE.collapseWorkerRunning = false;
       return;
@@ -939,9 +1045,8 @@
     }
 
     const nowPerf = performance.now();
-    const nowTs = Date.now();
 
-    if (nowPerf < STATE.allowCollapseAt || nowTs - STATE.lastScrollAt < CONFIG.collapsePauseAfterScrollMs) {
+    if (nowPerf < STATE.allowCollapseAt || !canRunCollapseWork()) {
       requestAnimationFrame(collapseWorkerTick);
       return;
     }
@@ -975,9 +1080,10 @@
     muteObserver(true);
 
     while (ops < opsLimit && plan.index < plan.queue.length) {
-      collapseMessage(plan.queue[plan.index], typingHot);
+      if (collapseMessage(plan.queue[plan.index], typingHot)) {
+        ops += 1;
+      }
       plan.index += 1;
-      ops += 1;
     }
 
     muteObserver(false);
@@ -992,6 +1098,10 @@
   }
 
   function restoreTurnsImmediately(minTurn, maxTurn) {
+    if (!isVirtualizationEnabled()) {
+      return;
+    }
+
     if (STATE.collapsedById.size === 0) {
       return;
     }
@@ -1008,8 +1118,16 @@
     muteObserver(false);
   }
 
-  function enforceLiveTurnBudget(anchorTurn, typingHot) {
+  function enforceLiveTurnBudget(anchorTurn, typingHot, minProtectedTurn = anchorTurn, maxProtectedTurn = anchorTurn) {
+    if (!isVirtualizationEnabled()) {
+      return;
+    }
+
     if (STATE.totalTurns <= 0) {
+      return;
+    }
+
+    if (!canRunCollapseWork(typingHot)) {
       return;
     }
 
@@ -1031,6 +1149,12 @@
       Math.max(STATE.totalTurns - budgetTurns, 0)
     );
     const keepEnd = clamp(keepStart + budgetTurns - 1, 0, STATE.totalTurns - 1);
+    const protectedRange = expandTurnRangeValue(
+      minProtectedTurn,
+      maxProtectedTurn,
+      STATE.totalTurns,
+      CONFIG.collapseViewportGuardTurns
+    );
 
     let ops = 0;
     muteObserver(true);
@@ -1048,8 +1172,13 @@
         continue;
       }
 
-      collapseMessage(item.id, true);
-      ops += 1;
+      if (item.turnIndex >= protectedRange.min && item.turnIndex <= protectedRange.max) {
+        continue;
+      }
+
+      if (collapseMessage(item.id, true)) {
+        ops += 1;
+      }
     }
 
     muteObserver(false);
@@ -1058,6 +1187,21 @@
     if (ops >= maxOps) {
       scheduleSync();
     }
+  }
+
+  function canRunCollapseWork(typingHot = isTypingHot()) {
+    if (!isVirtualizationEnabled()) {
+      return false;
+    }
+
+    return isCollapseIdleValue({
+      nowTs: Date.now(),
+      lastScrollAt: STATE.lastScrollAt,
+      lastInputAt: STATE.lastInputAt,
+      typingHot,
+      pauseAfterScrollMs: Math.max(CONFIG.collapsePauseAfterScrollMs, CONFIG.collapseIdleAfterScrollMs),
+      pauseAfterInputMs: CONFIG.collapseIdleAfterInputMs
+    });
   }
 
   function getDynamicTurnsAroundViewport(anchorDelta) {
@@ -1079,25 +1223,34 @@
   }
 
   function collapseMessage(id, lowCostMode = false) {
+    if (!isVirtualizationEnabled()) {
+      return false;
+    }
+
     const item = STATE.messageById.get(id);
     if (!item || item.isPlaceholder) {
-      return;
+      return false;
     }
 
     const node = item.el;
     if (!node.isConnected || !node.parentNode) {
       STATE.modelDirty = true;
-      return;
+      return false;
     }
 
-    let height = STATE.heightById.get(id) || 0;
+    const cachedHeight = STATE.heightById.get(id) || 0;
+    const measuredHeight = lowCostMode ? 0 : Math.max(node.offsetHeight, CONFIG.minPlaceholderHeight);
+    const height = resolvePlaceholderHeightValue({
+      cachedHeight,
+      measuredHeight,
+      minHeight: CONFIG.minPlaceholderHeight,
+      lowCostMode
+    });
     if (height <= 0) {
-      if (lowCostMode) {
-        // Avoid layout reads while typing: estimate and remove heavy DOM first.
-        height = item.role === CONFIG.userRole ? 84 : 180;
-      } else {
-        height = Math.max(node.offsetHeight, CONFIG.minPlaceholderHeight);
-      }
+      return false;
+    }
+
+    if (height !== cachedHeight) {
       STATE.heightById.set(id, height);
     }
 
@@ -1123,9 +1276,14 @@
 
     item.el = placeholder;
     item.isPlaceholder = true;
+    return true;
   }
 
   function restoreMessage(id) {
+    if (!isVirtualizationEnabled()) {
+      return;
+    }
+
     const item = STATE.messageById.get(id);
     const record = STATE.collapsedById.get(id);
 
@@ -1137,9 +1295,12 @@
       record.placeholder.replaceWith(record.node);
     }
 
-    if (!STATE.heightById.has(id) && record.node.isConnected) {
+    if (record.node.isConnected) {
       const measured = Math.max(record.node.offsetHeight, CONFIG.minPlaceholderHeight);
-      STATE.heightById.set(id, measured);
+      const cached = STATE.heightById.get(id) || 0;
+      if (shouldRefreshMeasuredHeightValue(cached, measured, 8, 0.05)) {
+        STATE.heightById.set(id, measured);
+      }
     }
 
     record.node.removeAttribute("data-easier-gpt-collapsed");
@@ -1234,6 +1395,11 @@
   }
 
   function cleanupCollapsedRecords() {
+    if (!isVirtualizationEnabled()) {
+      STATE.collapsedById.clear();
+      return;
+    }
+
     for (const [id, record] of Array.from(STATE.collapsedById.entries())) {
       const item = STATE.messageById.get(id);
       if (!item || !item.isPlaceholder) {
@@ -3174,7 +3340,18 @@
       return;
     }
 
-    if (event.target.closest("[data-easier-gpt-minimap], [data-easier-gpt-panel], [data-easier-gpt-preview]")) {
+    if (
+      event.target.closest(
+        [
+          "[data-easier-gpt-minimap]",
+          "[data-easier-gpt-panel]",
+          "[data-easier-gpt-preview]",
+          "[data-easier-gpt-question-dock]",
+          "[data-easier-gpt-stats]",
+          "[data-easier-gpt-pdf-float]"
+        ].join(", ")
+      )
+    ) {
       return;
     }
 
@@ -3191,14 +3368,14 @@
     requestLayoutFollow();
   }
 
-  function requestLayoutFollow(durationMs = CONFIG.sidebarFollowDurationMs) {
+  function requestLayoutFollow(frameCount = CONFIG.sidebarFollowFrames) {
     if (!isConversationPage()) {
       return;
     }
 
-    STATE.layoutFollowUntil = Math.max(
-      STATE.layoutFollowUntil,
-      performance.now() + durationMs
+    STATE.layoutFollowFramesRemaining = Math.max(
+      STATE.layoutFollowFramesRemaining,
+      Math.max(1, Number(frameCount) || 1)
     );
 
     if (STATE.layoutFollowRaf !== 0) {
@@ -3208,10 +3385,9 @@
     const tick = () => {
       STATE.layoutFollowRaf = 0;
       updateSidebarOffset(false);
-      if (performance.now() < STATE.layoutFollowUntil) {
+      STATE.layoutFollowFramesRemaining = Math.max(STATE.layoutFollowFramesRemaining - 1, 0);
+      if (STATE.layoutFollowFramesRemaining > 0) {
         STATE.layoutFollowRaf = requestAnimationFrame(tick);
-      } else {
-        STATE.layoutFollowUntil = 0;
       }
     };
 
@@ -3220,7 +3396,7 @@
 
   function updateSidebarOffset(force = false) {
     const nextOffsetPx = measureSidebarOffsetPx(force);
-    if (!force && nextOffsetPx === STATE.lastSidebarOffsetPx) {
+    if (!force && !shouldApplySidebarOffsetValue(STATE.lastSidebarOffsetPx, nextOffsetPx, 2)) {
       if (isMinimapPanelOpen()) {
         positionMinimapPanel();
       }
@@ -3553,6 +3729,36 @@
     window.setTimeout(scheduleSync, 120);
   }
 
+  function queueQuestionDockReveal(turnIndex) {
+    STATE.questionDockPendingRevealTurn = Number.isFinite(turnIndex) ? turnIndex : -1;
+  }
+
+  function flushQuestionDockReveal(list) {
+    if (!(list instanceof HTMLElement)) {
+      return;
+    }
+
+    const targetTurn = STATE.questionDockPendingRevealTurn;
+    if (!Number.isFinite(targetTurn) || targetTurn < 0) {
+      return;
+    }
+
+    const row = list.querySelector(`[data-turn-index='${targetTurn}']`);
+    if (!(row instanceof HTMLElement)) {
+      return;
+    }
+
+    const targetTop = Math.max(
+      0,
+      Math.round(row.offsetTop - Math.max(0, list.clientHeight * 0.35 - row.offsetHeight * 0.5))
+    );
+    list.scrollTo({
+      top: targetTop,
+      behavior: "smooth"
+    });
+    STATE.questionDockPendingRevealTurn = -1;
+  }
+
   function ensureQuestionDock() {
     if (!isConversationPage()) {
       return;
@@ -3619,6 +3825,23 @@
 
     const forceCollapsed = window.innerWidth <= CONFIG.questionDockAutoCollapseWidth;
     const isCollapsed = forceCollapsed || STATE.questionDockCollapsed;
+    const activeTurn = findActiveQuestionTurn(items);
+    const signature =
+      typeof questionApi.buildQuestionDockSignature === "function"
+        ? questionApi.buildQuestionDockSignature(items, activeTurn, {
+            isCollapsed,
+            favoritesLoaded: STATE.favoriteQuestionsLoaded
+          })
+        : JSON.stringify({
+            isCollapsed,
+            favoritesLoaded: !!STATE.favoriteQuestionsLoaded,
+            activeTurn,
+            items
+          });
+
+    if (signature === STATE.lastQuestionDockSignature && STATE.questionDockPendingRevealTurn < 0) {
+      return;
+    }
 
     dock.classList.toggle("is-collapsed", isCollapsed);
     dock.classList.toggle("is-empty", items.length === 0);
@@ -3642,11 +3865,14 @@
 
     if (items.length === 0) {
       list.replaceChildren(buildQuestionDockEmptyState());
+      STATE.questionDockPendingRevealTurn = -1;
+      STATE.lastQuestionDockSignature = signature;
       return;
     }
 
-    const activeTurn = findActiveQuestionTurn(items);
     list.replaceChildren(...items.map((item) => buildQuestionDockItem(item, activeTurn)));
+    flushQuestionDockReveal(list);
+    STATE.lastQuestionDockSignature = signature;
   }
 
   function buildQuestionDockItem(item, activeTurn) {
@@ -3655,6 +3881,7 @@
     row.setAttribute("data-turn-index", String(item.turnIndex));
     row.classList.toggle("is-active", item.turnIndex === activeTurn);
     row.addEventListener("click", () => {
+      queueQuestionDockReveal(item.turnIndex);
       jumpToTurn(item.turnIndex);
     });
 
@@ -3667,6 +3894,7 @@
     button.setAttribute("title", item.fullText);
     button.addEventListener("click", (event) => {
       event.stopPropagation();
+      queueQuestionDockReveal(item.turnIndex);
       jumpToTurn(item.turnIndex);
     });
 
@@ -4092,7 +4320,23 @@
   }
 
   function muteObserver(value) {
-    STATE.observerMuted = value;
+    if (value) {
+      STATE.observerMuteDepth += 1;
+      STATE.observerMuted = true;
+      return;
+    }
+
+    STATE.observerMuteDepth = Math.max(0, STATE.observerMuteDepth - 1);
+    STATE.observerMuted = STATE.observerMuteDepth > 0;
+  }
+
+  function runWithMutedObserver(callback) {
+    muteObserver(true);
+    try {
+      return callback();
+    } finally {
+      muteObserver(false);
+    }
   }
 
   function normalizeRole(value) {
@@ -4127,6 +4371,7 @@
 
   // A turn is considered collapsed when every message in it is a placeholder.
   function isTurnCollapsed(turn) {
+    if (!isVirtualizationEnabled()) return false;
     const ids = STATE.turnToIds.get(turn);
     if (!ids || ids.length === 0) return false;
     return ids.every(id => {
@@ -4669,6 +4914,10 @@
   // it with KaTeX. We scan assistant message paragraphs and render them ourselves.
 
   function initInlineLatexRenderer() {
+    if (!isInlineLatexAutoRenderEnabled()) {
+      return;
+    }
+
     ensureKatexStyles();
     ensureKatexRuntime();
 
@@ -4722,20 +4971,27 @@
       characterData: true
     });
 
-    if (STATE.inlineLatexSafetyTimer === 0) {
-      STATE.inlineLatexSafetyTimer = window.setInterval(() => {
-        if (document.visibilityState !== "visible") {
-          return;
-        }
-        ensureKatexRuntime();
-        queueInlineLatexForViewportTurns(2, CONFIG.inlineLatexLiveAssistantScanLimit);
-      }, 900);
-    }
-
     startInlineLatexBootstrapTimer();
   }
 
+  function isVirtualizationEnabled() {
+    return isVirtualizationActiveValue({
+      virtualizationEnabled: CONFIG.virtualizationEnabled,
+      mode: STATE.mode
+    });
+  }
+
+  function isInlineLatexAutoRenderEnabled() {
+    return isInlineLatexAutoRenderActiveValue({
+      inlineLatexAutoRenderEnabled: CONFIG.inlineLatexAutoRenderEnabled
+    });
+  }
+
   function startInlineLatexBootstrapTimer() {
+    if (!isInlineLatexAutoRenderEnabled()) {
+      return;
+    }
+
     if (STATE.inlineLatexBootstrapTimer !== 0) {
       return;
     }
@@ -4757,12 +5013,20 @@
   }
 
   function queueInlineLatexRender(root) {
+    if (!isInlineLatexAutoRenderEnabled()) {
+      return;
+    }
+
     const key = root instanceof Element ? root : document.body;
     STATE.inlineLatexPendingRoots.set(key, performance.now());
     scheduleInlineLatexFlush();
   }
 
   function scheduleInlineLatexFlush() {
+    if (!isInlineLatexAutoRenderEnabled()) {
+      return;
+    }
+
     const now = performance.now();
     const waitForReady = Math.max(0, STATE.inlineLatexReadyAt - now);
     const delay = Math.max(CONFIG.inlineLatexDebounceMs, Math.ceil(waitForReady));
@@ -4778,6 +5042,10 @@
   }
 
   function flushInlineLatexQueue() {
+    if (!isInlineLatexAutoRenderEnabled()) {
+      return;
+    }
+
     if (STATE.inlineLatexPendingRoots.size === 0) {
       return;
     }
@@ -4838,6 +5106,10 @@
   }
 
   function queueInlineLatexForViewportTurns(extraTurns = 0, limit = CONFIG.inlineLatexLiveAssistantScanLimit) {
+    if (!isInlineLatexAutoRenderEnabled()) {
+      return;
+    }
+
     if (STATE.totalTurns <= 0 || STATE.messages.length === 0) {
       return;
     }
@@ -4850,6 +5122,10 @@
   }
 
   function queueInlineLatexForTurnRange(minTurn, maxTurn, limit) {
+    if (!isInlineLatexAutoRenderEnabled()) {
+      return;
+    }
+
     let queued = 0;
     for (let turn = minTurn; turn <= maxTurn; turn += 1) {
       const ids = STATE.turnToIds.get(turn) || [];
@@ -4872,6 +5148,10 @@
   }
 
   function processInlineLatex(root) {
+    if (!isInlineLatexAutoRenderEnabled()) {
+      return;
+    }
+
     const containers = root.querySelectorAll
       ? root.querySelectorAll(".markdown p, .markdown li, .markdown td")
       : [];
@@ -4884,6 +5164,10 @@
   }
 
   function renderInlineLatexInElement(el) {
+    if (!isInlineLatexAutoRenderEnabled()) {
+      return;
+    }
+
     const textSnapshot = el.textContent || "";
     if (!textSnapshot.includes("$")) {
       STATE.inlineLatexSourceByHost.set(el, textSnapshot);
@@ -4907,26 +5191,29 @@
     let node;
     while ((node = walker.nextNode())) textNodes.push(node);
 
-    let changed = false;
-    for (const textNode of textNodes) {
-      if (textNode.parentElement?.closest(".katex, code, pre, [data-easier-gpt-inline-math='1']")) continue;
-      const text = textNode.textContent || "";
-      if (!text.includes("$")) continue;
+    const changed = runWithMutedObserver(() => {
+      let localChanged = false;
+      for (const textNode of textNodes) {
+        if (textNode.parentElement?.closest(".katex, code, pre, [data-easier-gpt-inline-math='1']")) continue;
+        const text = textNode.textContent || "";
+        if (!text.includes("$")) continue;
 
-      const parts = splitInlineMathSegments(text);
-      if (!parts.some(part => part.type === "math")) continue;
+        const parts = splitInlineMathSegments(text);
+        if (!parts.some(part => part.type === "math")) continue;
 
-      const frag = document.createDocumentFragment();
-      for (const part of parts) {
-        if (part.type === "math") {
-          frag.appendChild(buildInlineMathNode(part.value));
-        } else {
-          frag.appendChild(document.createTextNode(part.value));
+        const frag = document.createDocumentFragment();
+        for (const part of parts) {
+          if (part.type === "math") {
+            frag.appendChild(buildInlineMathNode(part.value));
+          } else {
+            frag.appendChild(document.createTextNode(part.value));
+          }
         }
+        textNode.replaceWith(frag);
+        localChanged = true;
       }
-      textNode.replaceWith(frag);
-      changed = true;
-    }
+      return localChanged;
+    });
 
     if (changed) {
       STATE.inlineLatexSourceByHost.set(el, el.textContent || "");

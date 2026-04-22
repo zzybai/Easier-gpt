@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  buildQuestionDockSignature,
   buildQuestionItems
 } = require("../question-dock.js");
 
@@ -75,4 +76,36 @@ test("buildQuestionItems attaches favorite metadata when key builder is provided
   assert.equal(items[0].isFavorited, false);
   assert.equal(items[1].isFavorited, true);
   assert.equal(items[1].favoriteKey, "/c/demo::1::第二个问题");
+});
+
+test("buildQuestionDockSignature changes when dock state or favorite readiness changes", () => {
+  const items = buildQuestionItems(
+    [
+      { id: 1, role: "user", turnIndex: 0, text: "第一个问题" },
+      { id: 2, role: "user", turnIndex: 1, text: "第二个问题" }
+    ],
+    (item) => item.text,
+    18
+  );
+
+  const base = buildQuestionDockSignature(items, 0, {
+    isCollapsed: false,
+    favoritesLoaded: false
+  });
+  const same = buildQuestionDockSignature(items, 0, {
+    isCollapsed: false,
+    favoritesLoaded: false
+  });
+  const collapsed = buildQuestionDockSignature(items, 0, {
+    isCollapsed: true,
+    favoritesLoaded: false
+  });
+  const favoritesReady = buildQuestionDockSignature(items, 0, {
+    isCollapsed: false,
+    favoritesLoaded: true
+  });
+
+  assert.equal(base, same);
+  assert.notEqual(base, collapsed);
+  assert.notEqual(base, favoritesReady);
 });

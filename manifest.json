@@ -22,6 +22,7 @@
         "floating-pdf-layout.js",
         "formula-copy.js",
         "print-structure.js",
+        "stability-helpers.js",
         "content.js"
       ],
       "css": [

@@ -66,8 +66,26 @@
     return items;
   }
 
+  function buildQuestionDockSignature(items, activeTurn = -1, options = {}) {
+    return JSON.stringify({
+      activeTurn: Number.isFinite(activeTurn) ? activeTurn : -1,
+      isCollapsed: !!options.isCollapsed,
+      favoritesLoaded: !!options.favoritesLoaded,
+      items: Array.isArray(items)
+        ? items.map((item) => ({
+            turnIndex: Number(item?.turnIndex) || 0,
+            fullText: String(item?.fullText || ""),
+            shortText: String(item?.shortText || ""),
+            favoriteKey: String(item?.favoriteKey || ""),
+            isFavorited: !!item?.isFavorited
+          }))
+        : []
+    });
+  }
+
   return {
     buildQuestionItems,
+    buildQuestionDockSignature,
     normalizeQuestionText,
     truncateQuestionText
   };
