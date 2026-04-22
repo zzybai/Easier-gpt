@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Easier-GPT",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Easier-GPT — Track long chats, export structured PDF, and copy LaTeX with one click.",
   "permissions": [
     "storage"
